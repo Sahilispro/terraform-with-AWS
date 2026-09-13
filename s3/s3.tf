@@ -32,10 +32,6 @@ locals {
   bucket_name = lower("${var.name}-${var.suffix}")
 }
 
-provider "aws" {
-  region = ap-south-1
-}
-
 resource "aws_s3_bucket" "this" {
   bucket = local.bucket_name
 
