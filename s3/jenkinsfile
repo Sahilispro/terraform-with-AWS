@@ -90,7 +90,22 @@ pipeline {
   }
 
   post {
-    always {
+    success {
+      script {
+        if (params.ACTION == 'apply') {
+          echo 'Apply succeeded. Keeping workspace to preserve Terraform state.'
+        } else {
+          echo 'Destroy completed. Cleaning workspace.'
+          cleanWs()
+        }
+      }
+    }
+    failure {
+      echo 'Job failed. Cleaning workspace.'
+      cleanWs()
+    }
+    aborted {
+      echo 'Job aborted. Cleaning workspace.'
       cleanWs()
     }
   }
