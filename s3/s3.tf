@@ -12,20 +12,45 @@ provider "aws" {
   region = "ap-south-1"
 }
 
-resource "aws_s3_bucket" "My-First-bucket" {
-    bucket =  "sahil-my-tf-test-bucket"
-    
-    tags = {
-      Name = "my-tf-test-bucket"
-      Env = "Dev"
-    }
+variable "region" {
+  type = string
 }
 
-resource "aws_s3_bucket_public_access_block" "My-First-bucket" {
-    bucket = aws_s3_bucket.My-First-bucket.id
+variable "owner_name" {
+  type = string
+}
 
-    block_public_acls       = true
-    block_public_policy     = true
-    ignore_public_acls      = true
-    restrict_public_buckets = false
+variable "name" {
+  type = string
+}
+
+variable "suffix" {
+  type = string
+}
+
+locals {
+  bucket_name = lower("${var.name}-${var.suffix}")
+}
+
+provider "aws" {
+  region = ap-south-1
+}
+
+resource "aws_s3_bucket" "this" {
+  bucket = local.bucket_name
+
+  tags = {
+    Name   = local.bucket_name
+    Owner  = var.owner_name
+    Env = var.region
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "this" {
+  bucket = aws_s3_bucket.this.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = false
 }
