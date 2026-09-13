@@ -43,45 +43,55 @@ pipeline {
 
     stage('Terraform Init') {
       steps {
-        withCredentials([
-          [$class: 'AmazonWebServicesCredentialsBinding',
-           credentialsId: 'aws_jenkins']
-        ]) {
-          bat 'terraform init'
+        dir('s3') {
+          withCredentials([
+            [$class: 'AmazonWebServicesCredentialsBinding',
+             credentialsId: 'aws_jenkins']
+          ]) {
+            bat 'terraform init'
+          }
         }
       }
     }
 
     stage('Terraform Action') {
       steps {
-        withCredentials([
-          [$class: 'AmazonWebServicesCredentialsBinding',
-           credentialsId: 'aws_jenkins']
-        ]) {
-          script {
-            if (params.ACTION == 'apply') {
-              bat '''
-                terraform plan ^
-                  -var="region=%REGION%" ^
-                  -var="owner_name=%OWNER_NAME%" ^
-                  -var="name=%NAME%" ^
-                  -var="suffix=%SUFFIX%" ^
-                  -out=tfplan
+        dir('s3') {
+          withCredentials([
+            [$class: 'AmazonWebServicesCredentialsBinding',
+             credentialsId: 'aws_jenkins']
+          ]) {
+            script {
+              if (params.ACTION == 'apply') {
+                bat '''
+                  terraform plan ^
+                    -var="region=%REGION%" ^
+                    -var="owner_name=%OWNER_NAME%" ^
+                    -var="name=%NAME%" ^
+                    -var="suffix=%SUFFIX%" ^
+                    -out=tfplan
 
-                terraform apply -auto-approve tfplan
-              '''
-            } else if (params.ACTION == 'destroy') {
-              bat '''
-                terraform destroy -auto-approve ^
-                  -var="region=%REGION%" ^
-                  -var="owner_name=%OWNER_NAME%" ^
-                  -var="name=%NAME%" ^
-                  -var="suffix=%SUFFIX%"
-              '''
+                  terraform apply -auto-approve tfplan
+                '''
+              } else if (params.ACTION == 'destroy') {
+                bat '''
+                  terraform destroy -auto-approve ^
+                    -var="region=%REGION%" ^
+                    -var="owner_name=%OWNER_NAME%" ^
+                    -var="name=%NAME%" ^
+                    -var="suffix=%SUFFIX%"
+                '''
+              }
             }
           }
         }
       }
+    }
+  }
+
+  post {
+    always {
+      cleanWs()
     }
   }
 }
