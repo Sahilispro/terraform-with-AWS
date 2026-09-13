@@ -37,7 +37,7 @@ pipeline {
     stage('Checkout') {
       steps {
         git branch: 'main',
-            url: 'https://github.com/your-org/your-repo.git'
+            url: 'https://github.com/Sahilispro/terraform-with-AWS.git/'
       }
     }
 
@@ -45,11 +45,9 @@ pipeline {
       steps {
         withCredentials([
           [$class: 'AmazonWebServicesCredentialsBinding',
-           credentialsId: 'aws_jenkins',
-           accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']
+           credentialsId: 'aws_jenkins']
         ]) {
-          sh 'terraform init'
+          bat 'terraform init'
         }
       }
     }
@@ -58,30 +56,28 @@ pipeline {
       steps {
         withCredentials([
           [$class: 'AmazonWebServicesCredentialsBinding',
-           credentialsId: 'aws_jenkins',
-           accessKeyVariable: 'AWS_ACCESS_KEY_ID',
-           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']
+           credentialsId: 'aws_jenkins']
         ]) {
           script {
             if (params.ACTION == 'apply') {
-              sh """
-                terraform plan \
-                  -var="region=${REGION}" \
-                  -var="owner_name=${OWNER_NAME}" \
-                  -var="name=${NAME}" \
-                  -var="suffix=${SUFFIX}" \
+              bat '''
+                terraform plan ^
+                  -var="region=%REGION%" ^
+                  -var="owner_name=%OWNER_NAME%" ^
+                  -var="name=%NAME%" ^
+                  -var="suffix=%SUFFIX%" ^
                   -out=tfplan
 
                 terraform apply -auto-approve tfplan
-              """
+              '''
             } else if (params.ACTION == 'destroy') {
-              sh """
-                terraform destroy -auto-approve \
-                  -var="region=${REGION}" \
-                  -var="owner_name=${OWNER_NAME}" \
-                  -var="name=${NAME}" \
-                  -var="suffix=${SUFFIX}"
-              """
+              bat '''
+                terraform destroy -auto-approve ^
+                  -var="region=%REGION%" ^
+                  -var="owner_name=%OWNER_NAME%" ^
+                  -var="name=%NAME%" ^
+                  -var="suffix=%SUFFIX%"
+              '''
             }
           }
         }
