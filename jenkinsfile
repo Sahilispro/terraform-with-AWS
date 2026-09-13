@@ -1,0 +1,79 @@
+pipeline {
+  agent any
+
+  parameters {
+    string(
+      name: 'REGION',
+      defaultValue: 'ap-south-1',
+      description: 'AWS Region'
+    )
+    string(
+      name: 'OWNER_NAME',
+      defaultValue: 'sahil',
+      description: 'Owner name to store in tags'
+    )
+    string(
+      name: 'NAME',
+      defaultValue: 'demo',
+      description: 'Bucket base name'
+    )
+    string(
+      name: 'SUFFIX',
+      defaultValue: '001',
+      description: 'Unique suffix to make the bucket globally unique'
+    )
+  }
+
+  environment {
+    TF_CLI_ARGS = '-no-color'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        git branch: 'main',
+             url: 'https://github.com/your-org/your-repo.git'
+      }
+    }
+
+    stage('Terraform Init') {
+      steps {
+        withCredentials([
+          [$class: 'AmazonWebServicesCredentialsBinding',
+           credentialsId: 'aws_jenkins']
+        ]) {
+          sh 'terraform init'
+        }
+      }
+    }
+
+    stage('Terraform Plan') {
+      steps {
+        withCredentials([
+          [$class: 'AmazonWebServicesCredentialsBinding',
+           credentialsId: 'aws_jenkin']
+        ]) {
+          sh """
+            terraform plan \
+              -var="region=${REGION}" \
+              -var="owner_name=${OWNER_NAME}" \
+              -var="name=${NAME}" \
+              -var="suffix=${SUFFIX}" \
+              -out=tfplan
+          """
+        }
+      }
+    }
+
+    stage('Terraform Apply') {
+      steps {
+        withCredentials([
+          [$class: 'AmazonWebServicesCredentialsBinding',
+           credentialsId: 'aws_jenkin']
+        ]) {
+          sh 'terraform apply -auto-approve tfplan'
+        }
+      }
+    }
+  }
+}
