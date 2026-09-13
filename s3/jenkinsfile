@@ -22,6 +22,11 @@ pipeline {
       defaultValue: '001',
       description: 'Unique suffix to make the bucket globally unique'
     )
+    choice(
+      name: 'ACTION',
+      choices: ['apply', 'destroy'],
+      description: 'Choose whether to create or delete the S3 bucket'
+    )
   }
 
   environment {
@@ -32,7 +37,7 @@ pipeline {
     stage('Checkout') {
       steps {
         git branch: 'main',
-             url: 'https://github.com/your-org/your-repo.git'
+            url: 'https://github.com/your-org/your-repo.git'
       }
     }
 
@@ -40,38 +45,45 @@ pipeline {
       steps {
         withCredentials([
           [$class: 'AmazonWebServicesCredentialsBinding',
-           credentialsId: 'aws_jenkins']
+           credentialsId: 'aws_jenkins',
+           accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']
         ]) {
           sh 'terraform init'
         }
       }
     }
 
-    stage('Terraform Plan') {
+    stage('Terraform Action') {
       steps {
         withCredentials([
           [$class: 'AmazonWebServicesCredentialsBinding',
-           credentialsId: 'aws_jenkin']
+           credentialsId: 'aws_jenkins',
+           accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+           secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']
         ]) {
-          sh """
-            terraform plan \
-              -var="region=${REGION}" \
-              -var="owner_name=${OWNER_NAME}" \
-              -var="name=${NAME}" \
-              -var="suffix=${SUFFIX}" \
-              -out=tfplan
-          """
-        }
-      }
-    }
+          script {
+            if (params.ACTION == 'apply') {
+              sh """
+                terraform plan \
+                  -var="region=${REGION}" \
+                  -var="owner_name=${OWNER_NAME}" \
+                  -var="name=${NAME}" \
+                  -var="suffix=${SUFFIX}" \
+                  -out=tfplan
 
-    stage('Terraform Apply') {
-      steps {
-        withCredentials([
-          [$class: 'AmazonWebServicesCredentialsBinding',
-           credentialsId: 'aws_jenkin']
-        ]) {
-          sh 'terraform apply -auto-approve tfplan'
+                terraform apply -auto-approve tfplan
+              """
+            } else if (params.ACTION == 'destroy') {
+              sh """
+                terraform destroy -auto-approve \
+                  -var="region=${REGION}" \
+                  -var="owner_name=${OWNER_NAME}" \
+                  -var="name=${NAME}" \
+                  -var="suffix=${SUFFIX}"
+              """
+            }
+          }
         }
       }
     }
