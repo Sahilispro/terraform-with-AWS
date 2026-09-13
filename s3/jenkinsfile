@@ -42,6 +42,9 @@ pipeline {
     }
 
     stage('Terraform Init') {
+      when {
+        expression { params.ACTION == 'apply' }
+      }
       steps {
         dir('s3') {
           withCredentials([
