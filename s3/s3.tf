@@ -1,4 +1,6 @@
 terraform {
+  required_version = ">= 1.16.2"
+  
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -16,11 +18,11 @@ variable "region" {
   type = string
 }
 
-variable "owner_name" {
+variable "environment" {
   type = string
 }
 
-variable "name" {
+variable "owner_name" {
   type = string
 }
 
@@ -29,7 +31,7 @@ variable "suffix" {
 }
 
 locals {
-  bucket_name = lower("${var.name}-${var.suffix}")
+  bucket_name = lower("${var.environment}-${var.owner_name}-${var.suffix}")
 }
 
 resource "aws_s3_bucket" "this" {
@@ -38,7 +40,8 @@ resource "aws_s3_bucket" "this" {
   tags = {
     Name   = local.bucket_name
     Owner  = var.owner_name
-    Env = var.region
+    Env    = var.environment
+    Region = var.region
   }
 }
 
