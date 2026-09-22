@@ -7,15 +7,15 @@ pipeline {
       defaultValue: 'ap-south-1',
       description: 'AWS Region'
     )
+    choice(
+      name: 'ENVIRONMENT',
+      choices: ['dev', 'stage', 'prod'],
+      description: 'Environment name used in the bucket naming pattern'
+    )
     string(
       name: 'OWNER_NAME',
       defaultValue: 'sahil',
-      description: 'Owner name to store in tags'
-    )
-    string(
-      name: 'NAME',
-      defaultValue: 'demo',
-      description: 'Bucket base name'
+      description: 'Owner name used in the bucket naming pattern'
     )
     string(
       name: 'SUFFIX',
@@ -26,6 +26,11 @@ pipeline {
       name: 'ACTION',
       choices: ['apply', 'destroy'],
       description: 'Choose whether to create or delete the S3 bucket'
+    )
+    choice(
+      name: 'AUTO_APPROVE',
+      choices: ['false', 'true'],
+      description: 'Set to true to skip the manual approval gate'
     )
   }
 
@@ -41,10 +46,20 @@ pipeline {
       }
     }
 
-    stage('Terraform Init') {
-      when {
-        expression { params.ACTION == 'apply' }
+    stage('Terraform Format Check') {
+      steps {
+        dir('s3') {
+          withCredentials([
+            [$class: 'AmazonWebServicesCredentialsBinding',
+             credentialsId: 'aws_jenkins']
+          ]) {
+            bat 'terraform fmt -check'
+          }
+        }
       }
+    }
+
+    stage('Terraform Init') {
       steps {
         dir('s3') {
           withCredentials([
@@ -57,35 +72,127 @@ pipeline {
       }
     }
 
-    stage('Terraform Action') {
+    stage('Terraform Validate') {
       steps {
         dir('s3') {
           withCredentials([
             [$class: 'AmazonWebServicesCredentialsBinding',
              credentialsId: 'aws_jenkins']
           ]) {
-            script {
-              if (params.ACTION == 'apply') {
-                bat '''
-                  terraform plan ^
-                    -var="region=%REGION%" ^
-                    -var="owner_name=%OWNER_NAME%" ^
-                    -var="name=%NAME%" ^
-                    -var="suffix=%SUFFIX%" ^
-                    -out=tfplan
+            bat 'terraform validate'
+          }
+        }
+      }
+    }
 
-                  terraform apply -auto-approve tfplan
-                '''
-              } else if (params.ACTION == 'destroy') {
-                bat '''
-                  terraform destroy -auto-approve ^
-                    -var="region=%REGION%" ^
-                    -var="owner_name=%OWNER_NAME%" ^
-                    -var="name=%NAME%" ^
-                    -var="suffix=%SUFFIX%"
-                '''
-              }
-            }
+    stage('Terraform Lint') {
+      steps {
+        dir('s3') {
+          withCredentials([
+            [$class: 'AmazonWebServicesCredentialsBinding',
+             credentialsId: 'aws_jenkins']
+          ]) {
+            bat '''
+              tflint --init
+              tflint
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Terraform Plan') {
+      when {
+        expression { params.ACTION == 'apply' }
+      }
+      steps {
+        dir('s3') {
+          withCredentials([
+            [$class: 'AmazonWebServicesCredentialsBinding',
+             credentialsId: 'aws_jenkins']
+          ]) {
+            bat '''
+              terraform plan ^
+                -var="region=%REGION%" ^
+                -var="environment=%ENVIRONMENT%" ^
+                -var="owner_name=%OWNER_NAME%" ^
+                -var="suffix=%SUFFIX%" ^
+                -out=tfplan
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Approval Gate') {
+      when {
+        expression {
+          (params.ACTION == 'apply' && params.AUTO_APPROVE == 'false') ||
+          (params.ACTION == 'destroy' && params.AUTO_APPROVE == 'false')
+        }
+      }
+      steps {
+        input(
+          message: "Approve Terraform ${params.ACTION} for bucket ${params.ENVIRONMENT}-${params.OWNER_NAME}-${params.SUFFIX}?",
+          ok: 'Approve',
+          submitter: 'admin,jenkins'
+        )
+      }
+    }
+
+    stage('Terraform Apply') {
+      when {
+        expression { params.ACTION == 'apply' }
+      }
+      steps {
+        dir('s3') {
+          withCredentials([
+            [$class: 'AmazonWebServicesCredentialsBinding',
+             credentialsId: 'aws_jenkins']
+          ]) {
+            bat '''
+              terraform apply -auto-approve tfplan
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Terraform Destroy') {
+      when {
+        expression { params.ACTION == 'destroy' }
+      }
+      steps {
+        dir('s3') {
+          withCredentials([
+            [$class: 'AmazonWebServicesCredentialsBinding',
+             credentialsId: 'aws_jenkins']
+          ]) {
+            bat '''
+              terraform destroy -auto-approve ^
+                -var="region=%REGION%" ^
+                -var="environment=%ENVIRONMENT%" ^
+                -var="owner_name=%OWNER_NAME%" ^
+                -var="suffix=%SUFFIX%"
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Post-Deploy Verification') {
+      when {
+        expression { params.ACTION == 'apply' }
+      }
+      steps {
+        dir('s3') {
+          withCredentials([
+            [$class: 'AmazonWebServicesCredentialsBinding',
+             credentialsId: 'aws_jenkins']
+          ]) {
+            bat '''
+              aws s3 ls s3://%ENVIRONMENT%-%OWNER_NAME%-%SUFFIX%
+            '''
           }
         }
       }
@@ -95,16 +202,27 @@ pipeline {
   post {
     success {
       script {
-        if (params.ACTION == 'apply') {
-          echo 'Apply succeeded. Keeping workspace to preserve Terraform state.'
-        } else {
-          echo 'Destroy completed. Cleaning workspace.'
-          cleanWs()
+        echo "Terraform ${params.ACTION} completed successfully."
+        try {
+          mail to: 'sahilawstesting@gmail.com',
+               subject: "Terraform Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+               body: "Deployment finished successfully for ${params.ACTION} on ${params.ENVIRONMENT}-${params.OWNER_NAME}-${params.SUFFIX}."
+        } catch (Exception e) {
+          echo "Notification skipped: ${e.getMessage()}"
         }
       }
     }
     failure {
-      echo 'Job failed. Cleaning workspace.'
+      script {
+        echo "Terraform ${params.ACTION} failed. Cleaning workspace."
+        try {
+          mail to: 'sahilawstesting@gmail.com',
+               subject: "Terraform Failure: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+               body: "Terraform ${params.ACTION} failed for ${params.ENVIRONMENT}-${params.OWNER_NAME}-${params.SUFFIX}. Please check Jenkins logs."
+        } catch (Exception e) {
+          echo "Notification skipped: ${e.getMessage()}"
+        }
+      }
       cleanWs()
     }
     aborted {
